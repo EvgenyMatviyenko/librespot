@@ -1,18 +1,22 @@
+extern crate serialport;
+
+use std::rc::Rc;
+
 use super::AudioFilter;
 use super::Mixer;
 
-#[derive(Clone)]
 pub struct ComMixer {
-
+    
 }
 
 impl Mixer for ComMixer {
     fn open() -> ComMixer {
-        ComMixer { }
+        ComMixer {
+        }
     }
 
     fn start(&self) {
-        print!("start");
+        
     }
 
     fn stop(&self) {

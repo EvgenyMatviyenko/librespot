@@ -27,3 +27,4 @@ pub mod audio_backend;
 pub mod config;
 pub mod mixer;
 pub mod player;
+pub mod serial_api;
