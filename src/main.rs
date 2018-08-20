@@ -25,6 +25,7 @@ use std::str::FromStr;
 use tokio_core::reactor::{Core, Handle};
 use tokio_io::IoStream;
 use url::Url;
+use std::sync::{Arc, Mutex};
 
 use librespot::core::authentication::{get_credentials, Credentials};
 use librespot::core::cache::Cache;
@@ -36,8 +37,10 @@ use librespot::connect::discovery::{discovery, DiscoveryStream};
 use librespot::connect::spirc::{Spirc, SpircTask};
 use librespot::playback::audio_backend::{self, Sink, BACKENDS};
 use librespot::playback::config::{Bitrate, PlayerConfig};
-use librespot::playback::mixer::{self, Mixer};
+use librespot::playback::mixer::Mixer;
+use librespot::playback::mixer::commixer::ComMixer;
 use librespot::playback::player::{Player, PlayerEvent};
+use librespot::playback::serial_api::SerialApi;
 
 mod player_event_handler;
 use player_event_handler::run_program_on_events;
@@ -91,8 +94,6 @@ struct Setup {
     backend: fn(Option<String>) -> Box<Sink>,
     device: Option<String>,
 
-    mixer: fn() -> Box<Mixer>,
-
     cache: Option<Cache>,
     player_config: PlayerConfig,
     session_config: SessionConfig,
@@ -143,7 +144,6 @@ fn setup(args: &[String]) -> Setup {
             "Audio device to use. Use '?' to list options if using portaudio",
             "DEVICE",
         )
-        .optopt("", "mixer", "Mixer to use", "MIXER")
         .optopt(
             "",
             "initial-volume",
@@ -201,9 +201,6 @@ fn setup(args: &[String]) -> Setup {
     let backend = audio_backend::find(backend_name).expect("Invalid backend");
 
     let device = matches.opt_str("device");
-
-    let mixer_name = matches.opt_str("mixer");
-    let mixer = mixer::find(mixer_name.as_ref()).expect("Invalid mixer");
 
     let use_audio_cache = !matches.opt_present("disable-audio-cache");
 
@@ -320,7 +317,6 @@ fn setup(args: &[String]) -> Setup {
         device: device,
         enable_discovery: enable_discovery,
         zeroconf_port: zeroconf_port,
-        mixer: mixer,
         player_event_program: matches.opt_str("onevent"),
     }
 }
@@ -332,7 +328,6 @@ struct Main {
     connect_config: ConnectConfig,
     backend: fn(Option<String>) -> Box<Sink>,
     device: Option<String>,
-    mixer: fn() -> Box<Mixer>,
     handle: Handle,
 
     discovery: Option<DiscoveryStream>,
@@ -358,7 +353,6 @@ impl Main {
             connect_config: setup.connect_config,
             backend: setup.backend,
             device: setup.device,
-            mixer: setup.mixer,
 
             connect: Box::new(futures::future::empty()),
             discovery: None,
@@ -420,16 +414,18 @@ impl Future for Main {
             if let Async::Ready(session) = self.connect.poll().unwrap() {
                 self.connect = Box::new(futures::future::empty());
                 let device = self.device.clone();
-                let mixer = (self.mixer)();
                 let player_config = self.player_config.clone();
                 let connect_config = self.connect_config.clone();
 
-                let audio_filter = mixer.get_audio_filter();
                 let backend = self.backend;
+
+                let serial_api = Arc::new(Mutex::new(SerialApi::new().unwrap()));
+                let mixer = Box::new(ComMixer::new(serial_api.clone()));
+
                 let (player, event_channel) =
-                    Player::new(player_config, session.clone(), audio_filter, move || {
+                    Player::new(player_config, session.clone(), None, move || {
                         (backend)(device)
-                    });
+                    }, serial_api);
 
                 let (spirc, spirc_task) = Spirc::new(connect_config, session, player, mixer);
                 self.spirc = Some(spirc);

@@ -9,6 +9,7 @@ use std::mem;
 use std::sync::mpsc::{RecvError, RecvTimeoutError, TryRecvError};
 use std::thread;
 use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use config::{Bitrate, PlayerConfig};
 use core::session::Session;
@@ -19,6 +20,7 @@ use audio::{VorbisDecoder, VorbisPacket};
 use audio_backend::Sink;
 use metadata::{FileFormat, Metadata, Track};
 use mixer::AudioFilter;
+use serial_api::SerialApi;
 
 pub struct Player {
     commands: Option<std::sync::mpsc::Sender<PlayerCommand>>,
@@ -35,6 +37,7 @@ struct PlayerInternal {
     sink_running: bool,
     audio_filter: Option<Box<AudioFilter + Send>>,
     event_sender: futures::sync::mpsc::UnboundedSender<PlayerEvent>,
+    serial_api: Arc<Mutex<SerialApi>>
 }
 
 enum PlayerCommand {
@@ -114,6 +117,7 @@ impl Player {
         session: Session,
         audio_filter: Option<Box<AudioFilter + Send>>,
         sink_builder: F,
+        serial_api: Arc<Mutex<SerialApi>>
     ) -> (Player, PlayerEventChannel)
     where
         F: FnOnce() -> Box<Sink> + Send + 'static,
@@ -134,6 +138,7 @@ impl Player {
                 sink_running: false,
                 audio_filter: audio_filter,
                 event_sender: event_sender,
+                serial_api: serial_api
             };
 
             internal.run();
@@ -526,7 +531,7 @@ impl PlayerInternal {
         }
     }
 
-    fn load_track(&self, track_id: SpotifyId, position: i64) -> Option<(Decoder, f32)> {
+    fn load_track(&mut self, track_id: SpotifyId, position: i64) -> Option<(Decoder, f32)> {
         let track = Track::get(&self.session, track_id).wait().unwrap();
 
         info!(
@@ -586,6 +591,11 @@ impl PlayerInternal {
         }
 
         info!("Track \"{}\" loaded", track.name);
+
+        let mut lock = self.serial_api.try_lock();
+        if let Ok(ref mut mutex) = lock {
+            mutex.write("smth");
+        }
 
         Some((decoder, normalisation_factor))
     }

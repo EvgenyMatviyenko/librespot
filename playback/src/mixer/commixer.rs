@@ -1,33 +1,41 @@
 extern crate serialport;
 
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use super::AudioFilter;
 use super::Mixer;
+use super::super::serial_api::SerialApi;
 
 pub struct ComMixer {
-    
+    serial_api: Arc<Mutex<SerialApi>>
+}
+
+impl ComMixer {
+    pub fn new(serial_api: Arc<Mutex<SerialApi>>) -> ComMixer {
+        ComMixer {
+            serial_api: serial_api
+        }
+    }
 }
 
 impl Mixer for ComMixer {
-    fn open() -> ComMixer {
-        ComMixer {
+    fn start(&mut self) {
+        if let Ok(ref mut mutex) = self.serial_api.try_lock() {
+            mutex.write("start");
         }
     }
 
-    fn start(&self) {
-        
+    fn stop(&mut self) {
+        if let Ok(ref mut mutex) = self.serial_api.try_lock() {
+            mutex.write("stop");
+        }
     }
 
-    fn stop(&self) {
-        print!("stop");
-    }
-
-    fn set_volume(&self, volume: u16) {
+    fn set_volume(&mut self, volume: u16) {
         print!("setVolume {}", volume);
     }
 
-    fn volume(&self) -> u16 {
+    fn volume(&mut self) -> u16 {
         return 0
     }
 
